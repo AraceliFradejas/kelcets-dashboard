@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
-import re
+import io
 
 # Configuración de la página
 st.set_page_config(
@@ -20,169 +20,10 @@ st.set_page_config(
 st.title("📊 Dashboard de Análisis de Comunicaciones - KelceTS")
 st.markdown("---")
 
-# Función para cargar comentarios desde el archivo TXT
-@st.cache_data
-def cargar_comentarios_desde_txt():
-    try:
-        with open('comentarios.txt', 'r', encoding='utf-8') as f:
-            contenido = f.read()
-        
-        # Extraer comentarios - buscamos patrones comunes
-        comentarios = []
-        
-        # Intentar varios patrones de extracción
-        patrones = [
-            r'(?:Comentario|Kommentar|Commentaire|Commento|Opmerking|Komentarz|Comentário|Kommentti|Σχόλιο)\s+(\d+)\s*:\s*(.*?)(?=(?:Comentario|Kommentar|Commentaire|Commento|Opmerking|Komentarz|Comentário|Kommentti|Σχόλιο)\s+\d+\s*:|$)',
-            r'(\d+)\s*[.:\)]\s*(.*?)(?=\d+\s*[.:\)]|$)'
-        ]
-        
-        for patron in patrones:
-            matches = re.findall(patron, contenido, re.DOTALL)
-            if matches:
-                # Si encontramos coincidencias con este patrón
-                for match in matches:
-                    if isinstance(match, tuple) and len(match) >= 2:
-                        numero = match[0]
-                        texto = match[1].strip()
-                        comentarios.append((numero, texto))
-                break
-        
-        if not comentarios:
-            # Si no se extrajo nada con los patrones, dividir por líneas
-            lineas = contenido.split('\n')
-            comentario_actual = ""
-            numero_actual = "1"
-            
-            for linea in lineas:
-                if linea.strip():
-                    match = re.match(r'^(\d+)[.:\)]?\s*(.*)', linea)
-                    if match:
-                        # Si encontramos un nuevo número, guardamos el comentario anterior
-                        if comentario_actual:
-                            comentarios.append((numero_actual, comentario_actual.strip()))
-                        
-                        numero_actual = match.group(1)
-                        comentario_actual = match.group(2)
-                    else:
-                        # Continuamos con el comentario actual
-                        comentario_actual += " " + linea
-            
-            # Añadir el último comentario
-            if comentario_actual:
-                comentarios.append((numero_actual, comentario_actual.strip()))
-        
-        return comentarios
-    except Exception as e:
-        st.error(f"Error al cargar comentarios: {str(e)}")
-        return []
-
-# Función para analizar comentarios
-def analizar_comentario(texto):
-    """Analiza un comentario y devuelve el resultado estimado"""
-    # Detectar idioma (simplificado)
-    idioma = "desconocido"
-    if re.search(r'[áéíóúüñ¿¡]', texto.lower()):
-        idioma = "español"
-    elif re.search(r'[àèìòùçé]', texto.lower()):
-        idioma = "francés"
-    elif re.search(r'[äöüß]', texto.lower()):
-        idioma = "alemán"
-    elif re.search(r'[ãõê]', texto.lower()):
-        idioma = "portugués"
-    elif re.search(r'[αβγδε]', texto.lower()):
-        idioma = "griego"
-    elif re.search(r'[åæø]', texto.lower()):
-        idioma = "finlandés"
-    
-    # Detección simple de sentimiento (muy simplificada)
-    palabras_positivas = ['bueno', 'excelente', 'genial', 'perfecto', 'cómodo', 'bien']
-    palabras_negativas = ['malo', 'error', 'problema', 'rotura', 'defecto', 'incómodo', 'no']
-    
-    sentimiento = "neutro"
-    texto_lower = texto.lower()
-    if any(palabra in texto_lower for palabra in palabras_positivas):
-        sentimiento = "positivo"
-    if any(palabra in texto_lower for palabra in palabras_negativas):
-        sentimiento = "negativo"
-    
-    # Ejemplo de detección simple de problemas (real necesitaría NLP más avanzado)
-    problema_talla = "no" if re.search(r'tall[a|e]|pequeñ[o|a]|grand[e]', texto_lower) else "no mencionado"
-    problema_material = "no" if re.search(r'material|calidad|rot[o|a]|desgast[e|a]', texto_lower) else "no mencionado"
-    problema_envio = "no" if re.search(r'env[i|í]o|retraso|tard[e|ó]', texto_lower) else "no mencionado"
-    
-    return {
-        "idioma": idioma,
-        "valoracion": "positiva" if sentimiento == "positivo" else "negativa" if sentimiento == "negativo" else "neutra",
-        "envio_96h": problema_envio,
-        "embalaje_danado": "no mencionado",
-        "talla_correcta": problema_talla,
-        "materiales_calidad": problema_material,
-        "tipo_uso": "no mencionado",
-        "cumple_expectativas": "sí" if sentimiento == "positivo" else "no" if sentimiento == "negativo" else "parcialmente"
-    }
-
-# Función para cargar y analizar datos
+# Función para cargar datos
 @st.cache_data
 def cargar_datos():
-    # Cargar comentarios desde archivo TXT
-    comentarios_raw = cargar_comentarios_desde_txt()
-    
-    if not comentarios_raw:
-        # Si no hay comentarios, generar datos de prueba
-        st.warning("No se pudieron cargar comentarios del archivo. Usando datos de ejemplo.")
-        return generar_datos_ejemplo()
-    
-    # Procesar comentarios
-    datos = []
-    for num, texto in comentarios_raw:
-        # Analizar cada comentario
-        analisis = analizar_comentario(texto)
-        
-        datos.append({
-            "ID": int(num),
-            "Comentario_Original": texto[:200] + "..." if len(texto) > 200 else texto,
-            "Idioma": analisis["idioma"],
-            "Valoracion": analisis["valoracion"],
-            "Envio_96h": analisis["envio_96h"],
-            "Embalaje_Danado": analisis["embalaje_danado"],
-            "Talla_Correcta": analisis["talla_correcta"],
-            "Materiales_Calidad": analisis["materiales_calidad"],
-            "Tipo_Uso": analisis["tipo_uso"],
-            "Cumple_Expectativas": analisis["cumple_expectativas"]
-        })
-    
-    # Crear DataFrame con los datos procesados
-    df = pd.DataFrame(datos)
-    df_comunicaciones = df.copy()
-    
-    # Calcular estadísticas
-    metricas = ["Total Comentarios", "Valoraciones Positivas", "Valoraciones Negativas", 
-                "Valoraciones Neutras", "Problemas de Calidad Materiales", 
-                "Problemas de Talla", "Problemas de Envío", "Problemas de Embalaje",
-                "Satisfacción General (%)"]
-    
-    valores = [
-        len(df),
-        len(df[df['Valoracion'] == 'positiva']),
-        len(df[df['Valoracion'] == 'negativa']),
-        len(df[df['Valoracion'] == 'neutra']),
-        len(df[df['Materiales_Calidad'] == 'no']),
-        len(df[df['Talla_Correcta'] == 'no']),
-        len(df[df['Envio_96h'] == 'no']),
-        len(df[df['Embalaje_Danado'] == 'sí']),
-        round(len(df[df['Cumple_Expectativas'].isin(['sí', 'parcialmente'])]) / len(df) * 100 if len(df) > 0 else 0, 2)
-    ]
-    
-    df_estadisticas = pd.DataFrame({
-        'Métrica': metricas,
-        'Valor': valores
-    })
-    
-    return df, df_comunicaciones, df_estadisticas, True
-
-# Función para generar datos de ejemplo (fallback)
-def generar_datos_ejemplo():
-    # Datos simulados para el DataFrame principal
+    # Datos simulados para demostración
     data_resumen = {
         'ID': list(range(1, 11)),
         'Comentario_Original': ['Ejemplo de comentario 1', 'Ejemplo de comentario 2'] * 5,
@@ -214,21 +55,29 @@ def generar_datos_ejemplo():
     
     # Crear DataFrames
     df = pd.DataFrame(data_resumen)
-    df_comunicaciones = pd.DataFrame(data_resumen)
+    df_comunicaciones = pd.DataFrame(data_resumen)  # Usando los mismos datos como ejemplo
     df_estadisticas = pd.DataFrame(data_estadisticas)
     
     return df, df_comunicaciones, df_estadisticas, True
 
-# Cargar datos
-df, df_comunicaciones, df_estadisticas, datos_cargados = cargar_datos()
-
 # Barra lateral para navegación
 st.sidebar.title("Navegación")
+
+# Botón de refrescar en la barra lateral
+with st.sidebar:
+    if st.button('🔄 Refrescar datos'):
+        st.cache_data.clear()
+        st.success("Datos refrescados correctamente")
+        st.rerun()
+
 seccion = st.sidebar.radio(
     "Selecciona una sección:",
     ["Resumen General", "Análisis por Idioma", "Análisis de Satisfacción", 
      "Problemas Detectados", "Datos en Bruto"]
 )
+
+# Cargar datos - Movido después del botón de refrescar para asegurar que se carguen datos frescos
+df, df_comunicaciones, df_estadisticas, datos_cargados = cargar_datos()
 
 if datos_cargados:
     # Sección 1: Resumen General
