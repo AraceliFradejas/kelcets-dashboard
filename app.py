@@ -1,3 +1,15 @@
+import pandas as pd
+
+# Al inicio de tu aplicación
+ruta_archivo = "ruta/a/tus/comentarios.csv"
+try:
+    df = pd.read_csv(ruta_archivo)
+    st.write(f"Datos cargados: {len(df)} filas")
+    st.write("Primeras filas:")
+    st.write(df.head())
+except Exception as e:
+    st.error(f"Error al cargar los datos: {e}")
+    
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
